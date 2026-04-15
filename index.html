@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스크랩 복사 지원 에디터</title>
+    <title>프로페셔널 코드 툴</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-okaidia.min.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
@@ -13,169 +13,158 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #1a1a1a; display: flex; flex-direction: column; align-items: center; padding: 30px; }
-        .toolbar { margin-bottom: 20px; display: flex; gap: 10px; align-items: center; background: #2d2d2d; padding: 10px 20px; border-radius: 10px; }
+        :root { --bg: #1e1e1e; --editor-bg: #272822; --text: #f8f8f2; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
         
-        /* 에디터 스타일 */
-        #editor-wrapper {
-            width: 850px;
-            background: #272822;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            border: 1px solid #3e3e3e;
-            position: relative;
-        }
+        .menu { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; justify-content: center; }
+        select, button { padding: 10px 16px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        
+        select { background: #333; color: white; }
+        .btn-text { background: #66d9ef; color: #000; }  /* 일반 텍스트 */
+        .btn-color { background: #a6e22e; color: #000; } /* 컬러 텍스트 */
+        .btn-img-copy { background: #fd971f; color: #000; } /* 이미지 복사 */
+        .btn-img-save { background: #f92672; color: #fff; } /* 이미지 저장 */
+        button:hover { opacity: 0.8; transform: translateY(-2px); }
 
-        #code-editor {
-            width: 100%;
-            height: 500px;
+        /* 에디터 컨테이너: 이 영역 전체가 배경색과 함께 스크랩됨 */
+        #capture-area {
+            background-color: var(--editor-bg);
             padding: 20px;
-            box-sizing: border-box;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 16px;
-            line-height: 1.5;
-            tab-size: 4;
-            color: #f8f8f2;
-            outline: none;
-            overflow: auto;
-            white-space: pre;
-            word-wrap: normal;
+            border-radius: 12px;
+            width: 850px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.5);
         }
 
-        /* Prism 공통 스타일 강제 적용 (복사 시 중요) */
-        .token.keyword { color: #f92672 !important; }
-        .token.function { color: #a6e22e !important; }
-        .token.string { color: #e6db74 !important; }
-        .token.comment { color: #75715e !important; }
-        .token.operator { color: #f8f8f2 !important; }
-        .token.class-name { color: #66d9ef !important; }
+        #editor-container { position: relative; width: 100%; height: 500px; }
 
-        button, select { padding: 8px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
-        .btn-img { background: #f92672; color: white; }
-        .tip { color: #aaa; margin-top: 15px; font-size: 0.9em; }
+        #editing, #highlighting {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 16px; line-height: 1.5;
+            tab-size: 4; white-space: pre; 
+            position: absolute; top: 0; left: 0;
+            border: none; outline: none; background: transparent;
+        }
+
+        /* 입력창: 실제 편집 수행 */
+        #editing {
+            z-index: 1; color: transparent; caret-color: white;
+            resize: none; overflow: auto;
+        }
+
+        /* 출력창: 색상 표시 및 스크랩 대상 */
+        #highlighting { z-index: 0; pointer-events: none; color: var(--text); overflow: hidden; }
+        code { font-family: inherit !important; }
+
+        /* 복사 시 배경색 유지를 위한 강제 스타일 */
+        #highlighting pre { background: transparent !important; margin: 0; }
     </style>
 </head>
 <body>
 
-<div class="toolbar">
-    <select id="lang-select" onchange="highlight()">
+<div class="menu">
+    <select id="lang-select" onchange="update()">
         <option value="python">Python</option>
         <option value="javascript">JavaScript / Code.gs</option>
         <option value="html">HTML</option>
         <option value="css">CSS</option>
     </select>
-    <button class="btn-img" onclick="saveImage()">🖼 이미지로 저장</button>
+    <button class="btn-text" onclick="copyPureText()">텍스트 복사</button>
+    <button class="btn-color" onclick="copyColorText()">컬러+배경 복사</button>
+    <button class="btn-img-copy" onclick="copyImage()">이미지 복사</button>
+    <button class="btn-img-save" onclick="saveImage()">이미지 저장</button>
 </div>
 
-<div id="editor-wrapper">
-    <pre id="editor-pre"><code id="code-editor" contenteditable="true" spellcheck="false"></code></pre>
+<div id="capture-area">
+    <div id="editor-container">
+        <textarea id="editing" spellcheck="false" oninput="update(); syncScroll();" onscroll="syncScroll()" onkeydown="handleIDE(event)"></textarea>
+        <div id="highlighting">
+            <pre><code id="hl-content"></code></pre>
+        </div>
+    </div>
 </div>
-
-<p class="tip">💡 <b>스크랩 가능:</b> 마우스로 코드를 긁어서 복사(Ctrl+C)하면 색상이 유지된 채로 붙여넣기 됩니다.</p>
 
 <script>
-    const editor = document.getElementById('code-editor');
+    const elInput = document.getElementById('editing');
+    const elOutput = document.getElementById('hl-content');
+    const elBox = document.getElementById('highlighting');
 
-    // 1. 하이라이팅 함수
-    function highlight() {
+    function update() {
+        let code = elInput.value;
         const lang = document.getElementById('lang-select').value;
+        if (code[code.length - 1] === "\n") code += " ";
+        elOutput.className = `language-${lang}`;
+        elOutput.textContent = code;
+        Prism.highlightElement(elOutput);
+    }
+
+    function syncScroll() {
+        elBox.scrollTop = elInput.scrollTop;
+        elBox.scrollLeft = elInput.scrollLeft;
+    }
+
+    // 1. 순수 텍스트만 복사
+    function copyPureText() {
+        navigator.clipboard.writeText(elInput.value);
+        alert("순수 텍스트가 복사되었습니다.");
+    }
+
+    // 2. 컬러 텍스트 + 배경색 복사 (스크랩 효과)
+    function copyColorText() {
+        const area = document.getElementById('capture-area');
         const selection = window.getSelection();
-        const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-        
-        // 현재 커서 위치 저장
-        const offset = getCaretCharacterOffsetWithin(editor);
-
-        let code = editor.innerText;
-        editor.className = `language-${lang}`;
-        editor.textContent = code;
-        Prism.highlightElement(editor);
-
-        // 커서 위치 복구
-        if (range) {
-            setCaretPosition(editor, offset);
-        }
-    }
-
-    // 2. 실시간 입력 감지
-    editor.addEventListener('input', () => {
-        highlight();
-    });
-
-    // 3. IDE 기능 (탭, 자동 완성)
-    editor.addEventListener('keydown', (e) => {
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            insertTextAtCaret("    ");
-        } else if (['(', '[', '{', "'", '"'].includes(e.key)) {
-            e.preventDefault();
-            const pairs = {'(':')', '[':']', '{':'}', "'":"'", '"':'"'};
-            insertTextAtCaret(e.key + pairs[e.key]);
-            // 커서를 괄호 사이로 이동
-            const offset = getCaretCharacterOffsetWithin(editor);
-            setCaretPosition(editor, offset - 1);
-        }
-    });
-
-    // --- 유틸리티 함수들 (커서 제어) ---
-    function insertTextAtCaret(text) {
-        const sel = window.getSelection();
-        const range = sel.getRangeAt(0);
-        range.deleteContents();
-        range.insertNode(document.createTextNode(text));
-        highlight();
-    }
-
-    function getCaretCharacterOffsetWithin(element) {
-        let caretOffset = 0;
-        const sel = window.getSelection();
-        if (sel.rangeCount > 0) {
-            const range = sel.getRangeAt(0);
-            const preCaretRange = range.cloneRange();
-            preCaretRange.selectNodeContents(element);
-            preCaretRange.setEnd(range.endContainer, range.endOffset);
-            caretOffset = preCaretRange.toString().length;
-        }
-        return caretOffset;
-    }
-
-    function setCaretPosition(element, offset) {
         const range = document.createRange();
-        const sel = window.getSelection();
-        let currentOffset = 0;
-        let nodeStack = [element];
-        let node, found = false;
-
-        while (!found && (node = nodeStack.pop())) {
-            if (node.nodeType === 3) {
-                const nextOffset = currentOffset + node.length;
-                if (offset <= nextOffset) {
-                    range.setStart(node, offset - currentOffset);
-                    range.setEnd(node, offset - currentOffset);
-                    found = true;
-                }
-                currentOffset = nextOffset;
-            } else {
-                for (let i = node.childNodes.length - 1; i >= 0; i--) {
-                    nodeStack.push(node.childNodes[i]);
-                }
-            }
-        }
-        sel.removeAllRanges();
-        sel.addRange(range);
+        range.selectNode(area);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.execCommand('copy');
+        selection.removeAllRanges();
+        alert("컬러와 배경색이 포함된 스크랩이 복사되었습니다.");
     }
 
-    function saveImage() {
-        html2canvas(document.getElementById('editor-wrapper'), { scale: 2 }).then(canvas => {
-            const link = document.createElement('a');
-            link.download = 'code-snap.png';
-            link.href = canvas.toDataURL();
-            link.click();
+    // 3. 이미지로 클립보드 복사
+    async function copyImage() {
+        const area = document.getElementById('capture-area');
+        const canvas = await html2canvas(area, {scale: 2});
+        canvas.toBlob(blob => {
+            const item = new ClipboardItem({ "image/png": blob });
+            navigator.clipboard.write([item]);
+            alert("이미지가 클립보드에 복사되었습니다.");
         });
     }
 
-    // 초기 예시
-    editor.innerText = "def python_style():\n    print('마우스로 드래그해서 복사해보세요!')";
-    highlight();
+    // 4. 이미지 파일 저장
+    async function saveImage() {
+        const area = document.getElementById('capture-area');
+        const canvas = await html2canvas(area, {scale: 2});
+        const link = document.createElement('a');
+        link.download = 'code-design.png';
+        link.href = canvas.toDataURL();
+        link.click();
+    }
+
+    // IDE 편의기능 (탭, 자동 괄호)
+    function handleIDE(e) {
+        const start = elInput.selectionStart;
+        const end = elInput.selectionEnd;
+        const pairs = {'(':')','[':']','{':'}',"'":"'",'"':'"'};
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            elInput.value = elInput.value.substring(0, start) + "    " + elInput.value.substring(end);
+            elInput.selectionStart = elInput.selectionEnd = start + 4;
+        } else if (pairs[e.key]) {
+            e.preventDefault();
+            elInput.value = elInput.value.substring(0, start) + e.key + pairs[e.key] + elInput.value.substring(end);
+            elInput.selectionStart = elInput.selectionEnd = start + 1;
+        }
+        update();
+    }
+
+    // 초기값
+    elInput.value = "def hello_world():\n    # 이 영역을 복사하면 배경까지 복사됩니다.\n    print(\"Hello, Python!\")\n\nhello_world()";
+    update();
 </script>
 
 </body>
