@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>일체형 코드 에디터</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <title>진정한 일체형 코드 에디터</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-okaidia.min.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
@@ -13,20 +13,21 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #1e1e1e; color: white; display: flex; flex-direction: column; align-items: center; padding: 40px; margin: 0; }
-        .controls { margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
+        body { font-family: 'Segoe UI', -apple-system, sans-serif; background-color: #f4f4f4; display: flex; flex-direction: column; align-items: center; padding: 30px; margin: 0; }
+        .toolbar { margin-bottom: 20px; display: flex; gap: 10px; align-items: center; background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         
-        /* 에디터 컨테이너: 입력창과 프리뷰를 겹침 */
+        /* 에디터 메인 컨테이너 */
         #editor-container {
             position: relative;
-            width: 800px;
-            height: 450px;
-            background: #2d2d2d;
+            width: 850px;
+            height: 500px;
+            background: #272822; /* Okaidia 배경색 */
             border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             overflow: hidden;
         }
 
+        /* 입력 및 결과 레이어 공통 스타일 */
         #editing, #highlighting {
             margin: 0;
             padding: 20px;
@@ -34,7 +35,7 @@
             height: 100%;
             border: none;
             box-sizing: border-box;
-            font-family: 'Fira Code', 'Consolas', monospace;
+            font-family: 'Consolas', 'Monaco', 'Andale Mono', monospace; /* 고정폭 글꼴 */
             font-size: 16px;
             line-height: 1.5;
             tab-size: 4;
@@ -45,31 +46,38 @@
             top: 0; left: 0;
         }
 
-        /* 실제 타이핑이 일어나는 투명 textarea */
+        /* 1. 실제 타이핑하는 입력창 (투명) */
         #editing {
             z-index: 1;
             background: transparent;
-            color: transparent;
-            caret-color: white; /* 커서만 보이게 설정 */
+            color: transparent; /* 글자는 투명하게 */
+            caret-color: #f8f8f2; /* 커서 색상 */
             resize: none;
             outline: none;
+            overflow-y: scroll; /* 스크롤바 항상 표시로 동기화 */
         }
 
-        /* 색상이 입혀지는 레이어 */
-        #highlighting { z-index: 0; pointer-events: none; }
+        /* 2. 하이라이팅된 색상이 보이는 결과창 */
+        #highlighting {
+            z-index: 0;
+            pointer-events: none; /* 클릭 불가 */
+            overflow: hidden; /* 스크롤바 숨김 (입력창과 연동) */
+        }
+        
         code { font-family: inherit !important; }
 
-        button, select { padding: 8px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
-        .btn-copy { background: #22c55e; color: white; }
-        .btn-img { background: #eab308; color: black; }
+        /* 컨트롤 요소 */
+        button, select { padding: 8px 15px; border-radius: 5px; border: 1px solid #ddd; cursor: pointer; font-weight: bold; font-size: 0.9em; }
+        .btn-copy { background: #e6db74; color: black; border: none; }
+        .btn-img { background: #f92672; color: white; border: none; }
     </style>
 </head>
 <body>
 
-<div class="controls">
+<div class="toolbar">
     <select id="lang-select" onchange="update()">
         <option value="python">Python</option>
-        <option value="javascript">JavaScript</option>
+        <option value="javascript">JavaScript / Code.gs</option>
         <option value="html">HTML</option>
         <option value="css">CSS</option>
     </select>
@@ -78,7 +86,11 @@
 </div>
 
 <div id="editor-container">
-    <textarea id="editing" spellcheck="false" oninput="update(); syncScroll();" onscroll="syncScroll()"></textarea>
+    <textarea id="editing" spellcheck="false" 
+        oninput="update(); syncScroll();" 
+        onscroll="syncScroll()" 
+        onkeydown="handleIDEFeatures(event)"></textarea>
+    
     <pre id="highlighting" aria-hidden="true"><code id="highlighting-content"></code></pre>
 </div>
 
@@ -87,11 +99,12 @@
     const elHighlighting = document.querySelector("#highlighting-content");
     const elPre = document.querySelector("#highlighting");
 
+    // 1. 실시간 하이라이팅 업데이트
     function update() {
         let text = elEditing.value;
         const lang = document.getElementById('lang-select').value;
 
-        // HTML 태그 처리 (< 를 &lt; 로 변환)
+        // 끝부분 줄바꿈 처리
         if (text[text.length - 1] === "\n") text += " ";
         
         elHighlighting.className = `language-${lang}`;
@@ -99,49 +112,79 @@
         Prism.highlightElement(elHighlighting);
     }
 
-    // 입력창과 하이라이트 레이어 스크롤 동기화
+    // 2. 스크롤 동기화
     function syncScroll() {
         elPre.scrollTop = elEditing.scrollTop;
         elPre.scrollLeft = elEditing.scrollLeft;
     }
 
-    // 색상 포함 복사 (전체 에디터 영역 캡쳐 복사)
+    // 3. 색상 포함 복사
     function copyRichText() {
         const range = document.createRange();
         range.selectNode(elPre);
         window.getSelection().removeAllRanges();
         window.getSelection().addRange(range);
-        document.execCommand('copy');
+        
+        try {
+            document.execCommand('copy');
+            alert("선명한 색상 서식이 클립보드에 복사되었습니다!\n(워드, 노션, 이메일 등에 붙여넣기)");
+        } catch (err) {
+            alert("복사 실패!");
+        }
         window.getSelection().removeAllRanges();
-        alert("색상 서식이 클립보드에 복사되었습니다!");
     }
 
-    // 이미지 저장
+    // 4. 이미지 저장
     function saveImage() {
         html2canvas(document.querySelector("#editor-container"), {
             scale: 2
         }).then(canvas => {
             const link = document.createElement('a');
-            link.download = 'code-capture.png';
+            link.download = 'code-clear-capture.png';
             link.href = canvas.toDataURL();
             link.click();
         });
     }
 
-    // 탭 키 입력 처리 (에디터 편의성)
-    elEditing.addEventListener('keydown', function(e) {
+    // 5. IDE 기능 (탭, 괄호/따옴표 자동 완성)
+    function handleIDEFeatures(e) {
+        const input = elEditing;
+        const start = input.selectionStart;
+        const end = input.selectionEnd;
+
+        // 탭 키 (들여쓰기)
         if (e.key === 'Tab') {
             e.preventDefault();
-            const start = this.selectionStart;
-            const end = this.selectionEnd;
-            this.value = this.value.substring(0, start) + "\t" + this.value.substring(end);
-            this.selectionStart = this.selectionEnd = start + 1;
+            input.value = input.value.substring(0, start) + "\t" + input.value.substring(end);
+            input.selectionStart = input.selectionEnd = start + 1;
             update();
         }
-    });
+
+        // 괄호 및 따옴표 자동 완성
+        const pairs = {
+            "'": "'",
+            '"': '"',
+            '(': ')',
+            '[': ']',
+            '{': '}'
+        };
+
+        if (pairs[e.key]) {
+            e.preventDefault(); // 기본 입력 막음
+            const open = e.key;
+            const close = pairs[open];
+            
+            // 괄호 사이에 입력값 넣기
+            input.value = input.value.substring(0, start) + open + close + input.value.substring(end);
+            
+            // 커서를 열린 괄호와 닫힌 괄호 사이에 위치
+            input.selectionStart = input.selectionEnd = start + 1;
+            update();
+        }
+    }
 
     // 초기 예시 코드
-    elEditing.value = "print('Hello World!')\n# 여기에 코드를 바로 입력하세요.";
+    elEditing.value = "def hello():\n\tprint('Hello World!')\n\nhello()";
     update();
 </script>
 
