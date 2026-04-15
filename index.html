@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실시간 코드 복사 & 이미지 변환기</title>
+    <title>일체형 코드 에디터</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
@@ -13,121 +13,136 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
     <style>
-        :root { --primary: #6366f1; --success: #22c55e; --warning: #eab308; }
-        body { font-family: 'Inter', -apple-system, sans-serif; background-color: #f8fafc; margin: 0; padding: 40px; color: #1e293b; }
-        .wrapper { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-        header { text-align: center; margin-bottom: 10px; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #1e1e1e; color: white; display: flex; flex-direction: column; align-items: center; padding: 40px; margin: 0; }
+        .controls { margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
         
-        /* 입력 영역 */
-        .editor-section { display: flex; flex-direction: column; gap: 10px; }
-        textarea { 
-            width: 100%; height: 200px; padding: 15px; border: 2px solid #e2e8f0; border-radius: 12px;
-            font-family: 'Fira Code', monospace; font-size: 14px; resize: vertical; outline: none; transition: border-color 0.2s;
+        /* 에디터 컨테이너: 입력창과 프리뷰를 겹침 */
+        #editor-container {
+            position: relative;
+            width: 800px;
+            height: 450px;
+            background: #2d2d2d;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            overflow: hidden;
         }
-        textarea:focus { border-color: var(--primary); }
 
-        /* 컨트롤 영역 */
-        .toolbar { display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px 20px; border-radius: 10px; shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .btns { display: flex; gap: 8px; }
-        select { padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; outline: none; cursor: pointer; }
-        button { padding: 8px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-        button:active { transform: translateY(1px); }
-        .btn-copy { background-color: var(--success); color: white; }
-        .btn-img { background-color: var(--warning); color: black; }
-
-        /* 프리뷰 영역 (이 부분이 복사/캡쳐됨) */
-        #capture-area { 
-            background: #2d2d2d; padding: 25px; border-radius: 12px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2); overflow-x: auto;
+        #editing, #highlighting {
+            margin: 0;
+            padding: 20px;
+            width: 100%;
+            height: 100%;
+            border: none;
+            box-sizing: border-box;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 16px;
+            line-height: 1.5;
+            tab-size: 4;
+            white-space: pre;
+            word-wrap: normal;
+            overflow: auto;
+            position: absolute;
+            top: 0; left: 0;
         }
-        pre { margin: 0 !important; }
-        code { font-family: 'Fira Code', 'Consolas', monospace !important; font-size: 15px !important; line-height: 1.5; }
-        
-        .tip { font-size: 0.85rem; color: #64748b; text-align: center; }
+
+        /* 실제 타이핑이 일어나는 투명 textarea */
+        #editing {
+            z-index: 1;
+            background: transparent;
+            color: transparent;
+            caret-color: white; /* 커서만 보이게 설정 */
+            resize: none;
+            outline: none;
+        }
+
+        /* 색상이 입혀지는 레이어 */
+        #highlighting { z-index: 0; pointer-events: none; }
+        code { font-family: inherit !important; }
+
+        button, select { padding: 8px 15px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
+        .btn-copy { background: #22c55e; color: white; }
+        .btn-img { background: #eab308; color: black; }
     </style>
 </head>
 <body>
 
-<div class="wrapper">
-    <header>
-        <h1>⚡ 실시간 코드 하이라이터</h1>
-    </header>
+<div class="controls">
+    <select id="lang-select" onchange="update()">
+        <option value="python">Python</option>
+        <option value="javascript">JavaScript</option>
+        <option value="html">HTML</option>
+        <option value="css">CSS</option>
+    </select>
+    <button class="btn-copy" onclick="copyRichText()">🎨 색상 그대로 복사</button>
+    <button class="btn-img" onclick="saveImage()">🖼 이미지 저장</button>
+</div>
 
-    <div class="editor-section">
-        <textarea id="code-input" placeholder="여기에 코드를 입력하거나 붙여넣으세요..." oninput="updateHighlight()"></textarea>
-    </div>
-
-    <div class="toolbar">
-        <div>
-            <label style="font-weight: bold; font-size: 0.9em;">언어 선택: </label>
-            <select id="lang-select" onchange="updateHighlight()">
-                <option value="python">Python</option>
-                <option value="javascript">JavaScript / Apps Script</option>
-                <option value="html">HTML</option>
-                <option value="css">CSS</option>
-            </select>
-        </div>
-        <div class="btns">
-            <button class="btn-copy" onclick="copyToClipboard()">🎨 색상 그대로 복사</button>
-            <button class="btn-img" onclick="saveImage()">🖼 이미지 저장</button>
-        </div>
-    </div>
-
-    <div id="capture-area">
-        <pre><code id="display" class="language-python"># 코드를 입력하면 실시간으로 변합니다.</code></pre>
-    </div>
-
-    <p class="tip">💡 <b>팁:</b> '색상 복사' 후 노션, 워드, 파워포인트 등에 붙여넣으면 코드 색상이 그대로 유지됩니다.</p>
+<div id="editor-container">
+    <textarea id="editing" spellcheck="false" oninput="update(); syncScroll();" onscroll="syncScroll()"></textarea>
+    <pre id="highlighting" aria-hidden="true"><code id="highlighting-content"></code></pre>
 </div>
 
 <script>
-    // 실시간 하이라이팅 엔진
-    function updateHighlight() {
-        const input = document.getElementById('code-input');
-        const display = document.getElementById('display');
+    const elEditing = document.querySelector("#editing");
+    const elHighlighting = document.querySelector("#highlighting-content");
+    const elPre = document.querySelector("#highlighting");
+
+    function update() {
+        let text = elEditing.value;
         const lang = document.getElementById('lang-select').value;
+
+        // HTML 태그 처리 (< 를 &lt; 로 변환)
+        if (text[text.length - 1] === "\n") text += " ";
         
-        // 텍스트가 비어있을 때 처리
-        const codeText = input.value.trim() === "" ? "# 코드를 입력해 주세요." : input.value;
-        
-        display.className = `language-${lang}`;
-        display.textContent = codeText;
-        Prism.highlightElement(display);
+        elHighlighting.className = `language-${lang}`;
+        elHighlighting.textContent = text;
+        Prism.highlightElement(elHighlighting);
     }
 
-    // 색상 포함 복사 (Rich Text)
-    function copyToClipboard() {
-        const area = document.getElementById('capture-area');
+    // 입력창과 하이라이트 레이어 스크롤 동기화
+    function syncScroll() {
+        elPre.scrollTop = elEditing.scrollTop;
+        elPre.scrollLeft = elEditing.scrollLeft;
+    }
+
+    // 색상 포함 복사 (전체 에디터 영역 캡쳐 복사)
+    function copyRichText() {
         const range = document.createRange();
-        range.selectNode(area);
+        range.selectNode(elPre);
         window.getSelection().removeAllRanges();
         window.getSelection().addRange(range);
-
-        try {
-            document.execCommand('copy');
-            alert('하이라이팅된 코드가 클립보드에 복사되었습니다!');
-        } catch (err) {
-            alert('복사 실패!');
-        }
+        document.execCommand('copy');
         window.getSelection().removeAllRanges();
+        alert("색상 서식이 클립보드에 복사되었습니다!");
     }
 
     // 이미지 저장
     function saveImage() {
-        const area = document.getElementById('capture-area');
-        html2canvas(area, {
-            backgroundColor: null, // 투명 배경 유지 원할 시
-            scale: 2 // 고화질 저장
+        html2canvas(document.querySelector("#editor-container"), {
+            scale: 2
         }).then(canvas => {
             const link = document.createElement('a');
-            link.download = 'code-design.png';
+            link.download = 'code-capture.png';
             link.href = canvas.toDataURL();
             link.click();
         });
     }
 
-    // 초기 실행
-    updateHighlight();
+    // 탭 키 입력 처리 (에디터 편의성)
+    elEditing.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            this.value = this.value.substring(0, start) + "\t" + this.value.substring(end);
+            this.selectionStart = this.selectionEnd = start + 1;
+            update();
+        }
+    });
+
+    // 초기 예시 코드
+    elEditing.value = "print('Hello World!')\n# 여기에 코드를 바로 입력하세요.";
+    update();
 </script>
 
 </body>
